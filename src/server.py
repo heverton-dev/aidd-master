@@ -87,6 +87,9 @@ reg_modulo1_routes(service_modulo1)
 # 4. Registrar Ferramentas MCP para cada Módulo
 mcp_server.register_module_tools('modulo1', 'Modulo1')
 
+# 4.1 Registrar Ferramentas MCP injetadas pelo Injetor Universal (src/core/mcp/*.py)
+mcp_server.register_injected_tools()
+
 # 4.5 Registrar Catálogo de Eventos Webhook para cada Módulo
 webhook_dispatcher.register_module_events('modulo1', 'Modulo1')
 

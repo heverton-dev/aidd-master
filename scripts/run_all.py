@@ -17,6 +17,7 @@ Gates na ordem de execução:
   7. G_CHAOS          — Testes de caos e resiliência
   8. G_HARNESS_COMPAT — Compatibilidade do harness
   9. G_ARQUITETURA    — Linter AST de Bounded Context
+  10. G_INJECT         — Injetor Universal de Componentes (Skills/MCPs/Rules/Specs/Configs/Agents)
 """
 
 import os
@@ -39,6 +40,7 @@ ALL_GATES = [
     "G_CHAOS",
     "G_HARNESS_COMPAT",
     "G_ARQUITETURA",
+    "G_INJECT",
 ]
 
 GATE_SCRIPTS = {
@@ -51,6 +53,7 @@ GATE_SCRIPTS = {
     "G_CHAOS": "G_CHAOS.py",
     "G_HARNESS_COMPAT": "G_HARNESS_COMPAT.py",
     "G_ARQUITETURA": "G_ARQUITETURA.py",
+    "G_INJECT": "G_INJECT.py",
 }
 
 

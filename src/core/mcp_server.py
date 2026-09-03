@@ -77,6 +77,47 @@ class MCPServer:
         if handler:
             self._handlers[name] = handler
 
+    def register_injected_tools(self, mcp_dir: Optional[str] = None) -> int:
+        """Carrega dinamicamente ferramentas MCP injetadas pelo Injetor Universal.
+
+        Escaneia 'src/core/mcp/*.py' (cada arquivo gerado por
+        'aidd inject mcp <nome>' expõe um dict 'TOOL_DEF' e uma função
+        'handler(params)') e registra cada uma via 'register_tool'.
+        Retorna a quantidade de ferramentas injetadas carregadas com sucesso.
+        """
+        import importlib.util
+
+        base_dir = mcp_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp")
+        if not os.path.isdir(base_dir):
+            return 0
+
+        carregadas = 0
+        for nome_arquivo in sorted(os.listdir(base_dir)):
+            if not nome_arquivo.endswith(".py") or nome_arquivo.startswith("__"):
+                continue
+            caminho = os.path.join(base_dir, nome_arquivo)
+            modulo_id = f"aidd_injected_mcp_{os.path.splitext(nome_arquivo)[0]}"
+            spec = importlib.util.spec_from_file_location(modulo_id, caminho)
+            if spec is None or spec.loader is None:
+                continue
+            modulo = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(modulo)
+
+            tool_def = getattr(modulo, "TOOL_DEF", None)
+            handler = getattr(modulo, "handler", None)
+            if not tool_def or not handler:
+                continue
+
+            self.register_tool(
+                name=tool_def["name"],
+                description=tool_def.get("description", ""),
+                input_schema=tool_def.get("input_schema", {"type": "object", "properties": {}}),
+                handler=handler,
+            )
+            carregadas += 1
+
+        return carregadas
+
     def register_module_tools(self, module_slug: str, module_name: str):
         """Registra automaticamente ferramentas CRUD para um módulo/fatia vertical."""
         slug = _sanitize_ident(module_slug.lower().strip())

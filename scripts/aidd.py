@@ -13,6 +13,7 @@ Suporta:
 - aidd audit [--report] [--json] [--dir <destino>]
 - aidd status [--dir <destino>]
 - aidd deploy [docker|vps]
+- aidd inject <skill|mcp|rule|spec|config|agent> <nome> [-d <descricao>] [--dir <destino>]
 """
 
 import os
@@ -600,6 +601,118 @@ def cmd_scaffold_infra(args):
     scaffold_infra(target_dir, suite_name)
 
 
+def _core_src_path() -> str:
+    master_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(master_root, "src", "core")
+
+
+def _executar_injecao(payload, target_dir: str, sobrescrever: bool = False) -> int:
+    """Executa o pipeline completo do Injetor Universal: resolver -> materializar -> sincronizar."""
+    core_src = _core_src_path()
+    if core_src not in sys.path:
+        sys.path.insert(0, core_src)
+    from profiles_registry import resolver_destinos
+    from materializador import materializar
+    from sincronizador_harness import sincronizar
+
+    print("=" * 80)
+    print(f"🧩 [AIDD INJECT] Injetando '{payload.get('tipo')}' -> '{payload.get('nome')}'")
+    print(f"📁 Diretório Alvo: {os.path.abspath(target_dir)}")
+    print("=" * 80)
+
+    resolucao_result = resolver_destinos(payload, target_dir)
+    if not resolucao_result.sucesso:
+        print(f"[ERRO] {resolucao_result.codigo}: {resolucao_result.erro}")
+        return 1
+    resolucao = resolucao_result.valor
+
+    materializacao_result = materializar(payload, resolucao, sobrescrever=sobrescrever)
+    if not materializacao_result.sucesso:
+        print(f"[ERRO] {materializacao_result.codigo}: {materializacao_result.erro}")
+        return 1
+
+    arquivos = materializacao_result.valor["arquivos_criados"]
+    print("\n📄 Arquivos materializados:")
+    for a in arquivos:
+        print(f"   - {a}")
+
+    sync_result = sincronizar(payload, resolucao, arquivos)
+    if sync_result.sucesso:
+        passos = sync_result.valor["passos_sincronizados"] or ["registry"]
+        print(f"\n🔗 Sincronização multi-harness: {', '.join(str(p) for p in passos)}")
+    else:
+        print(f"\n⚠️  [AVISO] Sincronização multi-harness parcial: {sync_result.erro}")
+
+    print("\n🏆 [SUCESSO]: Componente injetado e integrado ao ecossistema AIDD!")
+    return 0
+
+
+def cmd_inject(args):
+    """Fase 5 do Injetor Universal: subcomando explícito 'aidd inject <tipo> <nome>'."""
+    ensure_environment()
+    core_src = _core_src_path()
+    if core_src not in sys.path:
+        sys.path.insert(0, core_src)
+    from detector_camada import construir_request
+
+    conteudo = None
+    conteudo_file = getattr(args, "conteudo_file", None)
+    if conteudo_file:
+        with open(conteudo_file, "r", encoding="utf-8") as f:
+            conteudo = f.read()
+
+    descricao = args.descricao or f"Componente '{args.nome}' ({args.tipo}) injetado via CLI AIDD."
+    payload_result = construir_request(
+        tipo=args.tipo,
+        nome=args.nome,
+        descricao=descricao,
+        alvo_projeto=getattr(args, "projeto", "aidd-master"),
+        conteudo=conteudo,
+    )
+    if not payload_result.sucesso:
+        print(f"[ERRO] {payload_result.codigo}: {payload_result.erro}")
+        sys.exit(1)
+
+    sys.exit(_executar_injecao(
+        payload_result.valor,
+        getattr(args, "dir", "."),
+        sobrescrever=getattr(args, "sobrescrever", False),
+    ))
+
+
+def _tentar_injecao_por_linguagem_natural(raw_prompt: str) -> bool:
+    """Reconhece pedidos PT-BR de injeção de componente antes do fallback para 'plan'.
+
+    Retorna True (e termina o processo) se o texto foi reconhecido como um
+    pedido de injeção; retorna False para deixar o fluxo cair no
+    comportamento existente (planejamento de módulos de negócio via 'plan').
+    """
+    core_src = _core_src_path()
+    if core_src not in sys.path:
+        sys.path.insert(0, core_src)
+    try:
+        from intent_router import IntentRouter
+        from detector_camada import detectar_de_texto
+    except ImportError:
+        return False
+
+    intent = IntentRouter().parse_intent_result(raw_prompt)
+    if intent.action != "inject":
+        return False
+
+    payload_result = detectar_de_texto(raw_prompt)
+    if not payload_result.sucesso:
+        print(f"[ERRO] {payload_result.codigo}: {payload_result.erro}")
+        candidatos = (payload_result.detalhes or {}).get("candidatos")
+        if candidatos:
+            print(f"        Candidatos possíveis: {', '.join(candidatos)}")
+        else:
+            print("        Use o comando explícito: python scripts/aidd.py inject <tipo> <nome>")
+        sys.exit(1)
+
+    sys.exit(_executar_injecao(payload_result.valor, "."))
+
+
 def cmd_status(args):
     target_dir = os.path.abspath(getattr(args, "dir", "."))
     print("=" * 80)
@@ -802,9 +915,11 @@ def parse_natural_language_intent(prompt: str, base_dir: str = "."):
 
 
 def main():
-    known_cmds = {"setup", "init", "plan", "apply", "prompt", "compose", "compose-orca", "add-module", "test", "audit", "bench", "heal", "deploy", "status", "export-frontend", "refine-module", "scaffold-infra", "-h", "--help"}
+    known_cmds = {"setup", "init", "plan", "apply", "prompt", "compose", "compose-orca", "add-module", "test", "audit", "bench", "heal", "deploy", "status", "export-frontend", "refine-module", "scaffold-infra", "inject", "-h", "--help"}
     if len(sys.argv) > 1 and sys.argv[1] not in known_cmds:
         raw_prompt = " ".join(sys.argv[1:])
+        if _tentar_injecao_por_linguagem_natural(raw_prompt):
+            return
         parse_natural_language_intent(raw_prompt)
         return
 
@@ -896,6 +1011,16 @@ def main():
     p_infra = subparsers.add_parser("scaffold-infra", help="Gera infraestrutura declarativa Terraform + Helm em infra/")
     p_infra.add_argument("--dir", default=".", help="Diretório do projeto")
 
+    # inject (Injetor Universal de Componentes)
+    p_inject = subparsers.add_parser("inject", help="Injeta e integra um novo componente (skill/mcp/rule/spec/config/agent)")
+    p_inject.add_argument("tipo", choices=["skill", "mcp", "rule", "spec", "config", "agent"], help="Tipo de componente a injetar")
+    p_inject.add_argument("nome", help="Nome/slug do componente (kebab-case, ex.: 'seguranca-cibernetica')")
+    p_inject.add_argument("--descricao", "-d", default="", help="Descrição funcional do componente em PT-BR")
+    p_inject.add_argument("--conteudo-file", dest="conteudo_file", default=None, help="Arquivo com o conteúdo completo do artefato (senão, gera scaffold padrão completo)")
+    p_inject.add_argument("--projeto", default="aidd-master", help="Projeto alvo com perfil resolvido (default: aidd-master)")
+    p_inject.add_argument("--sobrescrever", action="store_true", help="Sobrescreve destinos já existentes em disco")
+    p_inject.add_argument("--dir", default=".", help="Diretório raiz do projeto (default: diretório atual)")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -918,7 +1043,8 @@ def main():
         "status": cmd_status,
         "export-frontend": cmd_export_frontend,
         "refine-module": cmd_refine_module,
-        "scaffold-infra": cmd_scaffold_infra
+        "scaffold-infra": cmd_scaffold_infra,
+        "inject": cmd_inject
     }
     cmds[args.command](args)
 

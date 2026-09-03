@@ -52,6 +52,7 @@ Toda alteração de código ou criação de nova funcionalidade DEVE respeitar r
 | Rodar testes unitários | `python -m pytest tests/` |
 | Validar todos os 10 Gates | `python scripts/run_all.py` |
 | Exportar histórico da sessão | Executar a skill `/resumo-sessao` |
+| Injetar skill/mcp/rule/spec/config/agent | `python scripts/aidd.py inject <tipo> <nome>` (ou frase PT-BR: "crie uma skill de X") |
 
 ---
 
@@ -61,3 +62,4 @@ Toda alteração de código ou criação de nova funcionalidade DEVE respeitar r
 * **Fatias de Negócio:** `src/modules/<dominio>/` (`models.py`, `services.py`, `routes.py`).
 * **Gates Determinísticos:** `scripts/gates/` (`G_*.py`).
 * **Documentação Oficial:** `docs/` (`01-fases-de-execucao.md` a `06-manual-de-uso.md`).
+* **Injetor Universal de Componentes:** `src/core/` (`schema_injector_request.json`, `profiles_registry.py`, `detector_camada.py`, `materializador.py`, `sincronizador_harness.py`); catálogo em `CAPABILITIES.json`; gate em `scripts/gates/G_INJECT.py`.
